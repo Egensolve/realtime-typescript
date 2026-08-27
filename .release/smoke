@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import { MediaClient } from '@egensolve/realtime/media';
+import { ArtifactsClient } from '@egensolve/realtime/artifacts';
+import { ApiException } from '@egensolve/realtime/http';
+
+const requests = [];
+const options = {
+  baseUrl: 'https://ers.example',
+  machineCredential: 'x'.repeat(32),
+  transport: {
+    async send(request) {
+      requests.push(request);
+      return { status: 200, headers: {}, body: '{"state":"ready"}' };
+    },
+  },
+};
+const id = '01k3k7qh0f8w2y7x4m6n9p1r3t';
+assert.equal((await new MediaClient(options).asset(id)).data.state, 'ready');
+await new ArtifactsClient(options).publishRevision(id, id, 'publish');
+assert.equal(new URL(requests[0].url).pathname, `/api/v1/media/assets/${id}`);
+assert.equal(JSON.parse(requests[1].body).revision_id, id);
+assert.equal(new ApiException(429, 'limited', 'Retry later', {}).isRetryable, true);

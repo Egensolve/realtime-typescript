@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: MIT
+name: Publish reviewed package
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: publish-typescript-sdk
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+      - name: Check approved bundle without publisher identity
+        run: node .release/promote.mjs check "$(cat .release/approval.sha256)" "$RUNNER_TEMP/check-evidence"
+  publish:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: release-typescript-sdk
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+      - name: Promote exact approved package and verify consumer readback
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_ENVIRONMENT: release-typescript-sdk
+          RELEASE_ENABLED: ${{ vars.RELEASE_ENABLED }}
+        run: node .release/promote.mjs publish-automatic "$(cat .release/approval.sha256)" "$RUNNER_TEMP/release-evidence"
+      - name: Preserve release evidence, including failed readback
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-evidence-typescript-sdk-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-evidence/
+          if-no-files-found: warn
+          retention-days: 90
