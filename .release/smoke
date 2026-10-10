@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { MediaClient } from '@egensolve/realtime/media';
 import { ArtifactsClient } from '@egensolve/realtime/artifacts';
+import { CallsClient, initialCallProjection, reduceCall } from '@egensolve/realtime/calls';
+import { createCallSurfaceView } from '@egensolve/realtime/calls/ui';
 import { ApiException } from '@egensolve/realtime/http';
 
 const requests = [];
@@ -17,6 +19,29 @@ const options = {
 const id = '01k3k7qh0f8w2y7x4m6n9p1r3t';
 assert.equal((await new MediaClient(options).asset(id)).data.state, 'ready');
 await new ArtifactsClient(options).publishRevision(id, id, 'publish');
+await new CallsClient(options).createSession(
+  {
+    call_id: id,
+    media_profile: 'audio',
+    processing_profile: 'recordable',
+    expires_at: '2026-08-29T12:00:00Z',
+  },
+  id,
+);
 assert.equal(new URL(requests[0].url).pathname, `/api/v1/media/assets/${id}`);
 assert.equal(JSON.parse(requests[1].body).revision_id, id);
+assert.equal(new URL(requests[2].url).pathname, '/api/v1/calls/sessions');
+const invitation = reduceCall(
+  initialCallProjection({ installationRef: 'browser-installation' }),
+  {
+    type: 'invitation',
+    source: 'push',
+    callId: id,
+    expiresAtMs: 2_000,
+  },
+  1_000,
+);
+assert.equal(invitation.projection.snapshotRequired, true);
+assert.equal(invitation.effects[0].type, 'fetch_snapshot');
+assert.equal(createCallSurfaceView(invitation.projection).status, 'No active call');
 assert.equal(new ApiException(429, 'limited', 'Retry later', {}).isRetryable, true);
