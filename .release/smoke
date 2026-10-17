@@ -1,3 +1,4 @@
+import { IntelligenceClient } from '@egensolve/realtime/intelligence';
 import assert from 'node:assert/strict';
 import { MediaClient } from '@egensolve/realtime/media';
 import { ArtifactsClient } from '@egensolve/realtime/artifacts';
@@ -45,3 +46,29 @@ assert.equal(invitation.projection.snapshotRequired, true);
 assert.equal(invitation.effects[0].type, 'fetch_snapshot');
 assert.equal(createCallSurfaceView(invitation.projection).status, 'No active call');
 assert.equal(new ApiException(429, 'limited', 'Retry later', {}).isRetryable, true);
+
+
+const intelligence = new IntelligenceClient(options);
+await intelligence.profiles();
+await intelligence.createInstructionSet({}, 'instructions');
+assert.deepEqual(JSON.parse(requests.at(-1).body), { version: 1 });
+await intelligence.addInstructionRevision(
+  id,
+  { profile: 'text-generation-v1', instruction_asset_id: id, material_asset_ids: [] },
+  'revision',
+);
+await intelligence.instructionSet(id);
+await intelligence.createJob(
+  {
+    profile: 'text-generation-v1',
+    instruction_asset_id: id,
+    inputs: [{ role: 'context', asset_id: id }],
+    output_expires_at: '2026-11-01T00:00:00Z',
+    force_fresh: true,
+  },
+  'generate',
+);
+assert.equal(JSON.parse(requests.at(-1).body).force_fresh, true);
+await intelligence.job(id);
+await intelligence.cancelJob(id, 'cancel');
+assert.equal(new URL(requests.at(-1).url).pathname, `/api/v1/intelligence/jobs/${id}/cancel`);

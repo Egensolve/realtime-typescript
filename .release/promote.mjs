@@ -133,6 +133,17 @@ export function validateReceipt(receipt) {
     Object.keys(receipt.files).length === 0
   )
     fail("invalid release receipt");
+  if (receipt.composerRequirements !== undefined) {
+    if (receipt.ecosystem !== "composer" || receipt.composerRequirements === null
+      || typeof receipt.composerRequirements !== "object" || Array.isArray(receipt.composerRequirements)
+      || Object.keys(receipt.composerRequirements).length > 8) fail("invalid Composer companion requirements");
+    for (const [name, version] of Object.entries(receipt.composerRequirements)) {
+      if (name === receipt.name || !/^[a-z0-9_-]+\/[a-z0-9_-]+$/.test(name)
+        || typeof version !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+        fail("Composer companions require exact public package versions");
+      }
+    }
+  }
   for (const [path, hash] of Object.entries(receipt.files)) {
     safePath(path);
     if (!/^[a-f0-9]{64}$/.test(hash)) fail("invalid file digest");
@@ -374,6 +385,9 @@ function pubPrepare(stage, receipt, anonymous) {
       fail("pub validation changed an approved file");
   return command;
 }
+export function npmDistributionTag(version) {
+  return version.includes("-") ? "next" : "latest";
+}
 async function publish(receipt, stage, archive, anonymous) {
   if (receipt.ecosystem === "npm") {
     const npmVersion = run("npm", ["--version"]).split(".").map(Number);
@@ -391,6 +405,7 @@ async function publish(receipt, stage, archive, anonymous) {
         "publish",
         archive,
         "--access=public",
+        `--tag=${npmDistributionTag(receipt.version)}`,
         "--registry=https://registry.npmjs.org",
         "--ignore-scripts",
       ],
@@ -513,7 +528,7 @@ function consumer(receipt, root, smoke, anonymous) {
     run("node", ["smoke.mjs"], options);
   } else if (receipt.ecosystem === "composer") {
     save(join(root, "composer.json"), {
-      require: { [receipt.name]: receipt.version },
+      require: { ...receipt.composerRequirements, [receipt.name]: receipt.version },
       config: { "allow-plugins": false },
     });
     run(
